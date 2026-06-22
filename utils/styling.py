@@ -320,26 +320,21 @@ def section_title(text: str, icon: str = "") -> None:
 
 
 def kpi_grid(cards: list[dict]) -> None:
-    """Render a responsive grid of KPI cards.
-
-    Each card dict: {"label": str, "value": str, "delta": str|None,
-                      "delta_sign": "positive"|"negative"|"neutral"}
-    """
-    parts = ['<div class="kpi-grid">']
-    for c in cards:
+    cols = st.columns(len(cards))
+    for col, c in zip(cols, cards):
         delta_html = ""
         if c.get("delta"):
             sign_class = c.get("delta_sign", "neutral")
             delta_html = f'<div class="kpi-delta {sign_class}">{c["delta"]}</div>'
-        parts.append(
-            f'<div class="kpi-card">'
-            f'<div class="kpi-label">{c["label"]}</div>'
-            f'<div class="kpi-value">{c["value"]}</div>'
-            f'{delta_html}'
-            f'</div>'
-        )
-    parts.append('</div>')
-    st.markdown("".join(parts), unsafe_allow_html=True)
+        with col:
+            st.markdown(
+                f'<div class="kpi-card">'
+                f'<div class="kpi-label">{c["label"]}</div>'
+                f'<div class="kpi-value">{c["value"]}</div>'
+                f'{delta_html}'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
 
 
 def insight_card(category: str, tag: str, text: str) -> None:
