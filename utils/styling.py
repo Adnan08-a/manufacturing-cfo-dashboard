@@ -306,13 +306,11 @@ def _inject_css() -> None:
 # ----------------------------------------------------------------------------
 def page_header(eyebrow: str, title: str, subtitle: str = "") -> None:
     st.markdown(
-        f"""
-        <div class="cfo-header">
-            <div class="eyebrow">{eyebrow}</div>
-            <h1>{title}</h1>
-            <p class="subtitle">{subtitle}</p>
-        </div>
-        """,
+        f'<div class="cfo-header">'
+        f'<div class="eyebrow">{eyebrow}</div>'
+        f'<h1>{title}</h1>'
+        f'<p class="subtitle">{subtitle}</p>'
+        f'</div>',
         unsafe_allow_html=True,
     )
 
@@ -327,33 +325,29 @@ def kpi_grid(cards: list[dict]) -> None:
     Each card dict: {"label": str, "value": str, "delta": str|None,
                       "delta_sign": "positive"|"negative"|"neutral"}
     """
-    html = ['<div class="kpi-grid">']
+    parts = ['<div class="kpi-grid">']
     for c in cards:
         delta_html = ""
         if c.get("delta"):
             sign_class = c.get("delta_sign", "neutral")
             delta_html = f'<div class="kpi-delta {sign_class}">{c["delta"]}</div>'
-        html.append(
-            f"""
-            <div class="kpi-card">
-                <div class="kpi-label">{c['label']}</div>
-                <div class="kpi-value">{c['value']}</div>
-                {delta_html}
-            </div>
-            """
+        parts.append(
+            f'<div class="kpi-card">'
+            f'<div class="kpi-label">{c["label"]}</div>'
+            f'<div class="kpi-value">{c["value"]}</div>'
+            f'{delta_html}'
+            f'</div>'
         )
-    html.append("</div>")
-    st.markdown("".join(html), unsafe_allow_html=True)
+    parts.append('</div>')
+    st.markdown("".join(parts), unsafe_allow_html=True)
 
 
 def insight_card(category: str, tag: str, text: str) -> None:
     """category in {growth, risk, efficiency, recommendation}"""
     st.markdown(
-        f"""
-        <div class="insight-card {category}">
-            <div class="insight-tag">{tag}</div>
-            <div>{text}</div>
-        </div>
-        """,
+        f'<div class="insight-card {category}">'
+        f'<div class="insight-tag">{tag}</div>'
+        f'<div>{text}</div>'
+        f'</div>',
         unsafe_allow_html=True,
     )
