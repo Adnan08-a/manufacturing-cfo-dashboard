@@ -15,6 +15,8 @@ from typing import Tuple
 import numpy as np
 import pandas as pd
 
+from utils.i18n import t
+
 
 def monthly_series(df: pd.DataFrame, value_col: str = "Revenue") -> pd.Series:
     s = df.groupby("Month")[value_col].sum().sort_index()
@@ -51,7 +53,7 @@ def forecast_holt_winters(series: pd.Series, periods: int, seasonal_periods: int
     """Returns (forecast_df, model_used). Falls back to linear trend when the
     series is too short for a reliable seasonal model."""
     if len(series) < seasonal_periods * 2:
-        return forecast_linear(series, periods), "Linear trend (insufficient history for seasonality)"
+        return forecast_linear(series, periods), t("forecast.model_used_linear_insufficient")
 
     try:
         from statsmodels.tsa.holtwinters import ExponentialSmoothing
@@ -69,9 +71,9 @@ def forecast_holt_winters(series: pd.Series, periods: int, seasonal_periods: int
             "lower": np.clip(forecast.values - 1.28 * resid_std, 0, None),
             "upper": forecast.values + 1.28 * resid_std,
         }, index=future_idx)
-        return df, "Holt-Winters (trend + seasonal)"
+        return df, t("forecast.model_used_holt_winters")
     except Exception:
-        return forecast_linear(series, periods), "Linear trend (model fallback)"
+        return forecast_linear(series, periods), t("forecast.model_used_fallback")
 
 
 def _future_index(index: pd.DatetimeIndex, periods: int) -> pd.DatetimeIndex:

@@ -45,16 +45,37 @@ PLOTLY_TEMPLATE_NAME = "cfo_blue"
 # ----------------------------------------------------------------------------
 # Page bootstrap
 # ----------------------------------------------------------------------------
+def apply_base_config(app_title: str = "Manufacturing CFO Cockpit", app_icon: str = "🏭") -> None:
+    """Must be called exactly once, at the very top of the entry script (app.py),
+    before any other Streamlit command -- this is what st.navigation requires."""
+    st.set_page_config(
+        page_title=app_title,
+        page_icon=app_icon,
+        layout="wide",
+        initial_sidebar_state="expanded",
+    )
+    inject_page_theme()
+
+
+def inject_page_theme() -> None:
+    """Registers the Plotly template and injects the CSS theme. Safe to call
+    on every page (it does NOT call st.set_page_config, so it won't conflict
+    with st.navigation's per-page title/icon handling)."""
+    _register_plotly_template()
+    _inject_css()
+
+
 def configure_page(page_title: str, page_icon: str = "📊") -> None:
-    """Must be the first Streamlit call on every page."""
+    """Deprecated: kept only for backward compatibility with the classic
+    (non-st.navigation) multipage pattern. New pages should rely on
+    apply_base_config() in app.py + inject_page_theme() per page instead."""
     st.set_page_config(
         page_title=f"{page_title} | Manufacturing CFO Cockpit",
         page_icon=page_icon,
         layout="wide",
         initial_sidebar_state="expanded",
     )
-    _register_plotly_template()
-    _inject_css()
+    inject_page_theme()
 
 
 def _register_plotly_template() -> None:

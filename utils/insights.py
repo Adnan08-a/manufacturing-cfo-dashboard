@@ -6,10 +6,13 @@ Two layers of "AI insight" generation:
 1. A deterministic, rule-based commentary engine (`generate_executive_commentary`,
    `generate_insight_cards`) that runs entirely offline -- no API key required --
    by mining trends, outliers, and correlations from the filtered dataframe.
+   All output text goes through utils.i18n.t() so it renders in whichever
+   language is currently selected.
 
 2. An optional live-LLM layer (`ask_claude`) that calls the Anthropic API for
    free-form Q&A when a key is available (via st.secrets or a session input).
    The dashboard works fully without this; it's an enhancement, not a dependency.
+   The answer language follows the dashboard's current language setting.
 """
 from __future__ import annotations
 
@@ -20,6 +23,7 @@ import streamlit as st
 
 from utils.kpis import compute_kpis, pct_change, pp_change
 from utils.formatting import format_currency, format_pct
+from utils.i18n import t, get_lang
 
 MODEL_NAME = "claude-sonnet-4-6"
 
@@ -29,7 +33,7 @@ MODEL_NAME = "claude-sonnet-4-6"
 # ----------------------------------------------------------------------------
 def generate_executive_commentary(df_curr: pd.DataFrame, df_prior: pd.DataFrame) -> list[str]:
     if df_curr.empty:
-        return ["Not enough data in the selected filters to generate commentary."]
+        return [t("commentary.no_data")]
 
     kc = compute_kpis(df_curr)
     kp = compute_kpis(df_prior) if not df_prior.empty else None
@@ -40,29 +44,31 @@ def generate_executive_commentary(df_curr: pd.DataFrame, df_prior: pd.DataFrame)
     if kp:
         rev_chg = pct_change(kc["revenue"], kp["revenue"])
         if rev_chg is not None:
-            verb = "grew" if rev_chg >= 0 else "declined"
-            bullets.append(
-                f"Revenue {verb} **{abs(rev_chg):.1f}%** versus the prior period to "
-                f"**{format_currency(kc['revenue'])}**, with EBITDA margin at "
-                f"**{format_pct(kc['ebitda_margin'])}** "
-                f"({pp_change(kc['ebitda_margin'], kp['ebitda_margin']):+.1f} pts)."
-            )
+            verb = t("commentary.verb_grew") if rev_chg >= 0 else t("commentary.verb_declined")
+            bullets.append(t(
+                "commentary.revenue_change",
+                verb=verb, pct=abs(rev_chg),
+                revenue=format_currency(kc["revenue"]),
+                margin=format_pct(kc["ebitda_margin"]),
+                delta=pp_change(kc["ebitda_margin"], kp["ebitda_margin"]),
+            ))
         else:
-            bullets.append(f"Revenue for the period totaled **{format_currency(kc['revenue'])}**.")
+            bullets.append(t("commentary.revenue_total_only", revenue=format_currency(kc["revenue"])))
     else:
-        bullets.append(
-            f"Revenue for the period totaled **{format_currency(kc['revenue'])}** with an "
-            f"EBITDA margin of **{format_pct(kc['ebitda_margin'])}**."
-        )
+        bullets.append(t(
+            "commentary.revenue_total_with_margin",
+            revenue=format_currency(kc["revenue"]),
+            margin=format_pct(kc["ebitda_margin"]),
+        ))
 
     # Top / bottom region
     by_region = df_curr.groupby("Region")["Revenue"].sum().sort_values(ascending=False)
     if len(by_region) > 1:
-        bullets.append(
-            f"**{by_region.index[0]}** led all regions with "
-            f"{format_currency(by_region.iloc[0])} in revenue, while "
-            f"**{by_region.index[-1]}** trailed at {format_currency(by_region.iloc[-1])}."
-        )
+        bullets.append(t(
+            "commentary.region_lead_trail",
+            top=by_region.index[0], top_rev=format_currency(by_region.iloc[0]),
+            bottom=by_region.index[-1], bottom_rev=format_currency(by_region.iloc[-1]),
+        ))
 
     # Top product by margin
     margin_by_product = (
@@ -71,27 +77,22 @@ def generate_executive_commentary(df_curr: pd.DataFrame, df_prior: pd.DataFrame)
         ).sort_values(ascending=False)
     )
     if len(margin_by_product) > 0:
-        bullets.append(
-            f"**{margin_by_product.index[0]}** carries the strongest gross margin at "
-            f"**{margin_by_product.iloc[0]:.1f}%**, while "
-            f"**{margin_by_product.index[-1]}** is lowest at {margin_by_product.iloc[-1]:.1f}%."
-        )
+        bullets.append(t(
+            "commentary.product_margin",
+            top=margin_by_product.index[0], top_pct=margin_by_product.iloc[0],
+            bottom=margin_by_product.index[-1], bottom_pct=margin_by_product.iloc[-1],
+        ))
 
     # Operational flags
     if kc["avg_on_time"] < 85:
-        bullets.append(
-            f"⚠️ On-time delivery averaged **{kc['avg_on_time']:.1f}%**, below the 85% service-level "
-            f"target — a risk to customer retention if it persists."
-        )
+        bullets.append(t("commentary.low_on_time", pct=kc["avg_on_time"]))
     if kc["avg_return_rate"] > 6:
-        bullets.append(
-            f"⚠️ Return rate is elevated at **{kc['avg_return_rate']:.1f}%**, worth a quality-control review."
-        )
+        bullets.append(t("commentary.high_return", pct=kc["avg_return_rate"]))
     if kc["inventory_turns"] < 4:
-        bullets.append(
-            f"Inventory is turning **{kc['inventory_turns']:.1f}x** annualized — slower turns tie up "
-            f"working capital ({format_currency(kc['working_capital'])} average inventory on hand)."
-        )
+        bullets.append(t(
+            "commentary.low_turns",
+            turns=kc["inventory_turns"], wc=format_currency(kc["working_capital"]),
+        ))
 
     return bullets
 
@@ -103,8 +104,8 @@ def generate_insight_cards(df: pd.DataFrame) -> list[dict]:
     """Returns a list of {category, tag, text} dicts spanning growth, risk,
     efficiency, and recommendation themes."""
     if df.empty or len(df) < 5:
-        return [{"category": "recommendation", "tag": "Data",
-                  "text": "Broaden the filters to generate richer insights — too few records selected."}]
+        return [{"category": "recommendation", "tag": t("insight.few_records_tag"),
+                  "text": t("insight.few_records_text")}]
 
     cards = []
 
@@ -114,10 +115,12 @@ def generate_insight_cards(df: pd.DataFrame) -> list[dict]:
         (top_region, top_product), top_rev = combo.index[0], combo.iloc[0]
         share = top_rev / df["Revenue"].sum() * 100
         cards.append({
-            "category": "growth", "tag": "Growth driver",
-            "text": (f"<b>{top_product} in {top_region}</b> is the single largest revenue "
-                     f"combination at {format_currency(top_rev)} ({share:.1f}% of total revenue). "
-                     f"Consider prioritizing capacity and marketing investment here."),
+            "category": "growth", "tag": t("insight.growth_driver_tag"),
+            "text": t(
+                "insight.growth_driver_text",
+                product=top_product, region=top_region,
+                revenue=format_currency(top_rev), share=share,
+            ),
         })
 
     # --- Growth: month-over-month momentum ---
@@ -126,9 +129,11 @@ def generate_insight_cards(df: pd.DataFrame) -> list[dict]:
         recent_growth = pct_change(monthly.iloc[-1], monthly.iloc[-2])
         if recent_growth is not None and recent_growth > 5:
             cards.append({
-                "category": "growth", "tag": "Momentum",
-                "text": (f"Revenue accelerated <b>{recent_growth:.1f}%</b> month-over-month in "
-                         f"{monthly.index[-1]:%B %Y}, the strongest recent reading in the series."),
+                "category": "growth", "tag": t("insight.momentum_tag"),
+                "text": t(
+                    "insight.momentum_text",
+                    pct=recent_growth, month=f"{monthly.index[-1]:%B %Y}",
+                ),
             })
 
     # --- Risk: downtime vs on-time delivery correlation ---
@@ -136,29 +141,31 @@ def generate_insight_cards(df: pd.DataFrame) -> list[dict]:
         corr = df["Machine Downtime (hours)"].corr(df["On-Time Delivery (%)"])
         if corr < -0.15:
             cards.append({
-                "category": "risk", "tag": "Operational risk",
-                "text": (f"Machine downtime shows a negative correlation ({corr:.2f}) with on-time "
-                         f"delivery — downtime spikes are likely contributing to missed delivery windows."),
+                "category": "risk", "tag": t("insight.op_risk_tag"),
+                "text": t("insight.op_risk_text", corr=corr),
             })
 
     # --- Risk: region/product with high return rate ---
     returns_by_product = df.groupby("Product")["Return Rate (%)"].mean().sort_values(ascending=False)
     if len(returns_by_product) > 0 and returns_by_product.iloc[0] > df["Return Rate (%)"].mean() + 1.5:
         cards.append({
-            "category": "risk", "tag": "Quality risk",
-            "text": (f"<b>{returns_by_product.index[0]}</b> has a return rate of "
-                     f"{returns_by_product.iloc[0]:.1f}%, notably above the overall average of "
-                     f"{df['Return Rate (%)'].mean():.1f}% — flag for quality review."),
+            "category": "risk", "tag": t("insight.quality_risk_tag"),
+            "text": t(
+                "insight.quality_risk_text",
+                product=returns_by_product.index[0], pct=returns_by_product.iloc[0],
+                avg=df["Return Rate (%)"].mean(),
+            ),
         })
 
     # --- Efficiency: inventory levels vs turns by region ---
     inv_by_region = df.groupby("Region")["Inventory Levels"].mean().sort_values(ascending=False)
     if len(inv_by_region) > 1:
         cards.append({
-            "category": "efficiency", "tag": "Working capital",
-            "text": (f"<b>{inv_by_region.index[0]}</b> carries the highest average inventory level "
-                     f"({inv_by_region.iloc[0]:,.0f} units) — review safety-stock policy for potential "
-                     f"working-capital release."),
+            "category": "efficiency", "tag": t("insight.working_capital_tag"),
+            "text": t(
+                "insight.working_capital_text",
+                region=inv_by_region.index[0], level=inv_by_region.iloc[0],
+            ),
         })
 
     # --- Efficiency: labor hours vs units sold productivity ---
@@ -167,24 +174,23 @@ def generate_insight_cards(df: pd.DataFrame) -> list[dict]:
     ).sort_values(ascending=False)
     if len(prod_by_region) > 1:
         cards.append({
-            "category": "efficiency", "tag": "Labor productivity",
-            "text": (f"<b>{prod_by_region.index[0]}</b> produces the most units sold per labor hour "
-                     f"({prod_by_region.iloc[0]:.2f}), the benchmark for other regions to target."),
+            "category": "efficiency", "tag": t("insight.labor_prod_tag"),
+            "text": t(
+                "insight.labor_prod_text",
+                region=prod_by_region.index[0], value=prod_by_region.iloc[0],
+            ),
         })
 
     # --- Recommendation: satisfaction vs return rate ---
     if df["Customer Satisfaction"].mean() < 3.2:
         cards.append({
-            "category": "recommendation", "tag": "Customer experience",
-            "text": (f"Average customer satisfaction is {df['Customer Satisfaction'].mean():.1f}/5 — "
-                     f"pair this with the quality and delivery findings above to prioritize a service "
-                     f"recovery plan."),
+            "category": "recommendation", "tag": t("insight.cx_tag"),
+            "text": t("insight.cx_text", value=df["Customer Satisfaction"].mean()),
         })
 
     cards.append({
-        "category": "recommendation", "tag": "Next step",
-        "text": ("Use the Scenario Planning page to stress-test a margin-improvement plan (price, "
-                 "cost, or mix changes) against the trends identified here."),
+        "category": "recommendation", "tag": t("insight.next_step_tag"),
+        "text": t("insight.next_step_text"),
     })
 
     return cards
@@ -203,7 +209,10 @@ def get_api_key() -> Optional[str]:
 
 
 def build_data_summary(df: pd.DataFrame) -> str:
-    """A compact textual summary of the filtered dataset for LLM context."""
+    """A compact textual summary of the filtered dataset for LLM context.
+    Kept in English regardless of UI language -- this is internal model
+    context, not user-facing text, and English keeps the model's numeric
+    reasoning most reliable."""
     if df.empty:
         return "No data in the current filter selection."
     k = compute_kpis(df)
@@ -227,15 +236,20 @@ def build_data_summary(df: pd.DataFrame) -> str:
 
 def ask_claude(question: str, data_summary: str, api_key: str) -> str:
     """Calls the Anthropic API for a grounded answer about the filtered dataset.
-    Raises on failure -- callers should catch and surface a friendly message."""
+    Raises on failure -- callers should catch and surface a friendly message.
+    Answers in Bosnian when the dashboard's language is set to Bosnian."""
     import anthropic
 
     client = anthropic.Anthropic(api_key=api_key)
+    language_instruction = (
+        "\n\nRespond in Bosnian (bosanski jezik)." if get_lang() == "bs" else ""
+    )
     system_prompt = (
         "You are a senior FP&A analyst for a manufacturing company. Answer the "
         "user's question using ONLY the data summary provided below. Be concise, "
         "specific, and quantitative. If the summary doesn't contain enough detail "
-        "to answer precisely, say so rather than guessing.\n\n"
+        "to answer precisely, say so rather than guessing."
+        f"{language_instruction}\n\n"
         f"DATA SUMMARY:\n{data_summary}"
     )
     response = client.messages.create(
